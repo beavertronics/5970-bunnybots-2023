@@ -5,16 +5,27 @@
 package frc.robot;
 import frc.robot.commands.ExampleCommand;
 import frc.robot.subsystems.ExampleSubsystem;
-import frc.robot.Constants;
 
 import edu.wpi.first.wpilibj.TimedRobot;
+import edu.wpi.first.wpilibj.shuffleboard.BuiltInLayouts;
+import edu.wpi.first.wpilibj.shuffleboard.Shuffleboard;
 import edu.wpi.first.wpilibj2.command.Command;
+import edu.wpi.first.wpilibj2.command.CommandBase;
 import edu.wpi.first.wpilibj2.command.CommandScheduler;
-import edu.wpi.first.wpilibj2.command.Subsystem;
-import edu.wpi.first.wpilibj2.command.SubsystemBase;
-
+import edu.wpi.first.wpilibj2.command.Commands;
 import edu.wpi.first.wpilibj2.command.button.CommandXboxController;
+import edu.wpi.first.wpilibj2.command.button.CommandJoystick;
+import edu.wpi.first.wpilibj2.command.button.CommandPS4Controller;
 import edu.wpi.first.wpilibj2.command.button.Trigger;
+import edu.wpi.first.util.sendable.SendableRegistry;
+import edu.wpi.first.wpilibj.Joystick;
+import edu.wpi.first.wpilibj.RobotBase;
+
+import edu.wpi.first.wpilibj.smartdashboard.SmartDashboard;
+
+//TODO: possibly implement a power limit- FRC battery cannot support more than 1750 Watts
+//Paper on the subject: https://www.chiefdelphi.com/uploads/default/original/3X/f/2/f2c7116c9b8c3dd1bb1f95250289778af1ca36dc.pdf
+//Practical example: https://www.reddit.com/r/FRC/comments/62m9sq/limiting_current_draw_via_code/dfo79v1/?utm_source=share&utm_medium=web3x&utm_name=web3xcss&utm_term=1&utm_content=share_button
 
 /**
  * This file links together all the code to Control the robot.
@@ -23,72 +34,38 @@ import edu.wpi.first.wpilibj2.command.button.Trigger;
 public class RobotController extends TimedRobot {
   private Command m_autonomousCommand;
 
-  private RobotHardware bot;
-
-  // The robot's subsystems and commands are defined here...
-  private final ExampleSubsystem m_exampleSubsystem = new ExampleSubsystem();
+  private RobotHardware bot = new RobotHardware();
 
   // Replace with CommandPS4Controller or CommandJoystick if needed
-  private CommandXboxController controllerOperator;
-  private void initialize() {
-    controllerOperator = new CommandXboxController(Constants.Station.kDriverControllerPort);
-  }
+  //private CommandXboxController controllerOperator = new CommandXboxController(Constants.Station.operatorControllerPort);
+  private CommandJoystick 
+    joyDriverL = new CommandJoystick(Constants.Station.driverJoystickPortL),
+    joyDriverR = new CommandJoystick(Constants.Station.driverJoystickPortR);
 
-    /**
-   * Use this method to define your trigger->command mappings. Triggers can be created via the
-   * {@link Trigger#Trigger(java.util.function.BooleanSupplier)} constructor with an arbitrary
-   * predicate, or via the named factories in {@link
-   * edu.wpi.first.wpilibj2.command.button.CommandGenericHID}'s subclasses for {@link
-   * CommandXboxController Xbox}/{@link edu.wpi.first.wpilibj2.command.button.CommandPS4Controller
-   * PS4} controllers or {@link edu.wpi.first.wpilibj2.command.button.CommandJoystick Flight
-   * joysticks}.
-   */
-  private void configureBindings() {
-    // Schedule `ExampleCommand` when `exampleCondition` changes to `true`
-    new Trigger(m_exampleSubsystem::exampleCondition)
-        .onTrue(new ExampleCommand(m_exampleSubsystem));
 
-    // Schedule `exampleMethodCommand` when the Xbox controller's B button is pressed,
-    // cancelling on release.
-    controllerOperator.b().whileTrue(m_exampleSubsystem.exampleMethodCommand());
-  }
+  private CommandBase teleopDrive = Commands.run(()->{
+    bot.driveSubsys.drive.tankDrive(joyDriverL.getY(),joyDriverR.getY());
+  }, bot.driveSubsys);
+  private CommandBase teleopDriveTurbo = Commands.run(()->{
+    bot.driveSubsys.drive.tankDrive(joyDriverL.getY(),joyDriverR.getY());
+  }, bot.driveSubsys);
+  
 
-  /**
-   * This function is run when the robot is first started up and should be used for any
-   * initialization code.
-   */
+  //Robot Initialization- do things need to reset?
   @Override
   public void robotInit() {
-    // Instantiate our RobotContainer.  This will perform all our button bindings, and put our
-    // autonomous chooser on the dashboard.
-    
-    initialize();
-    bot.initialize();
-    configureBindings();
+    Shuffleboard.getTab("Robot").getLayout("Drivetrain",BuiltInLayouts.kList).add(bot.driveSubsys.drive);
+    Shuffleboard.getTab("Robot").getLayout("Drivetrain",BuiltInLayouts.kList).add(bot.driveSubsys.imu);
   }
-
-  /**
-   * This function is called every 20 ms, no matter the mode. Use this for items like diagnostics
-   * that you want ran during disabled, autonomous, teleoperated and test.
-   *
-   * <p>This runs after the mode specific periodic functions, but before LiveWindow and
-   * SmartDashboard integrated updating.
-   */
+  /** This function is called once when the robot is first started up. */
   @Override
-  public void robotPeriodic() {
-    // Runs the Scheduler.  This is responsible for polling buttons, adding newly-scheduled
-    // commands, running already-scheduled commands, removing finished or interrupted commands,
-    // and running subsystem periodic() methods.  This must be called from the robot's periodic
-    // block in order for anything in the Command-based framework to work.
+  public void simulationInit() {}
+
+  @Override
+  public void robotPeriodic() {  //This function runs every 20ms, no matter what.
+    // THE ALMIGHTY SCHEDULER- it runs commands
     CommandScheduler.getInstance().run();
   }
-
-  /** This function is called once each time the robot enters Disabled mode. */
-  @Override
-  public void disabledInit() {}
-
-  @Override
-  public void disabledPeriodic() {}
 
   /** This autonomous runs the autonomous command selected by your {@link RobotContainer} class. */
   @Override
@@ -101,24 +78,16 @@ public class RobotController extends TimedRobot {
     }
   }
 
-  /** This function is called periodically during autonomous. */
-  @Override
-  public void autonomousPeriodic() {}
-
   @Override
   public void teleopInit() {
-    // This makes sure that the autonomous stops running when
-    // teleop starts running. If you want the autonomous to
-    // continue until interrupted by another command, remove
-    // this line or comment it out.
+    // stop autonomous when teleop starts!!
     if (m_autonomousCommand != null) {
       m_autonomousCommand.cancel();
     }
-  }
 
-  /** This function is called periodically during operator control. */
-  @Override
-  public void teleopPeriodic() {}
+    bot.driveSubsys.setDefaultCommand(teleopDrive);
+    joyDriverL.trigger().whileTrue(teleopDriveTurbo);
+  }
 
   @Override
   public void testInit() {
@@ -129,10 +98,6 @@ public class RobotController extends TimedRobot {
   /** This function is called periodically during test mode. */
   @Override
   public void testPeriodic() {}
-
-  /** This function is called once when the robot is first started up. */
-  @Override
-  public void simulationInit() {}
 
   /** This function is called periodically whilst in simulation. */
   @Override
